@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+const RATINGS_STORAGE_KEY = "call_rating_dashboard_ratings_v1";
+
 function App() {
   const [calls, setCalls] = useState([]);
   const [selectedCallId, setSelectedCallId] = useState(null);
@@ -23,6 +25,33 @@ function App() {
       });
   }, []);
 
+  // Load ratings from localStorage on first mount
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(RATINGS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          setRatings(parsed);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load ratings from localStorage", e);
+    }
+  }, []);
+
+  // Save ratings to localStorage whenever they change
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        RATINGS_STORAGE_KEY,
+        JSON.stringify(ratings)
+      );
+    } catch (e) {
+      console.warn("Failed to save ratings to localStorage", e);
+    }
+  }, [ratings]);
+
   const selectedCall = calls.find((c) => c.call_id === selectedCallId);
 
   const handleRatingChange = (callId, idx, field, value) => {
@@ -30,7 +59,7 @@ function App() {
       const prevForCall = prev[callId] || {};
       const prevForUtterance = prevForCall[idx] || { stars: 0, comment: "" };
 
-      return {
+      const updated = {
         ...prev,
         [callId]: {
           ...prevForCall,
@@ -40,6 +69,11 @@ function App() {
           },
         },
       };
+
+      // 🔌 FUTURE: here is a good place to also POST to a backend,
+      // e.g. fetch("/api/ratings", { method: "POST", body: JSON.stringify({ callId, idx, ...updated[callId][idx] }) })
+
+      return updated;
     });
   };
 
@@ -51,22 +85,9 @@ function App() {
     }
   };
 
-  // Export only the ratings object (per-call, per-turn)
-  const handleExportRatings = () => {
-    const blob = new Blob([JSON.stringify(ratings, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "assistant_ratings.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Export full transcripts with ratings merged into Assistant turns
-  const handleExportAnnotatedTranscripts = () => {
-    const annotated = calls.map((call) => {
+  // Helper: build annotated version of all calls using current ratings
+  const buildAnnotatedCalls = () => {
+    return calls.map((call) => {
       const callRatings = ratings[call.call_id] || {};
       return {
         call_id: call.call_id,
@@ -83,14 +104,38 @@ function App() {
         }),
       };
     });
+  };
 
+  // Download annotated JSON for ALL calls
+  const handleExportAnnotatedTranscriptsAll = () => {
+    const annotated = buildAnnotatedCalls();
     const blob = new Blob([JSON.stringify(annotated, null, 2)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "annotated_transcripts.json";
+    a.download = "annotated_transcripts_all_calls.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Download annotated JSON for ONLY the current call
+  const handleExportAnnotatedTranscriptCurrent = () => {
+    if (!selectedCall) return;
+    const annotatedAll = buildAnnotatedCalls();
+    const current = annotatedAll.find(
+      (c) => c.call_id === selectedCall.call_id
+    );
+    if (!current) return;
+
+    const blob = new Blob([JSON.stringify(current, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `annotated_${selectedCall.call_id}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -101,9 +146,9 @@ function App() {
         display: "flex",
         height: "100vh",
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-        fontSize: 15, // slightly larger base font
-        backgroundColor: "#e5e7eb", // light grey background
-        color: "#111827", // dark text
+        fontSize: 15,
+        backgroundColor: "#e5e7eb",
+        color: "#111827",
       }}
     >
       {/* Sidebar – list of calls */}
@@ -221,7 +266,7 @@ function App() {
                   </div>
                   <div
                     style={{
-                      fontSize: 16, // larger transcript text
+                      fontSize: 16,
                       color: "#111827",
                       lineHeight: 1.45,
                     }}
@@ -264,22 +309,22 @@ function App() {
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <button
-                onClick={handleExportRatings}
+                onClick={handleExportAnnotatedTranscriptCurrent}
                 style={{
                   padding: "6px 10px",
                   fontSize: 13,
                   borderRadius: 999,
-                  border: "1px solid #3b82f6",
+                  border: "1px solid #6366f1",
                   cursor: "pointer",
-                  background: "#3b82f6",
+                  background: "#6366f1",
                   color: "#ffffff",
                   fontWeight: 500,
                 }}
               >
-                Export ratings
+                Download this call
               </button>
               <button
-                onClick={handleExportAnnotatedTranscripts}
+                onClick={handleExportAnnotatedTranscriptsAll}
                 style={{
                   padding: "6px 10px",
                   fontSize: 13,
@@ -291,7 +336,7 @@ function App() {
                   fontWeight: 500,
                 }}
               >
-                Export annotated transcripts
+                Download all calls
               </button>
             </div>
           </div>
