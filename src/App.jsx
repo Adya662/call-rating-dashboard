@@ -7,6 +7,7 @@ function App() {
 
   const utteranceRefs = useRef({}); // { "callId:idx": HTMLDivElement }
 
+  // Load transcripts.json from /public
   useEffect(() => {
     fetch("/transcripts.json")
       .then((r) => r.json())
@@ -50,6 +51,7 @@ function App() {
     }
   };
 
+  // Export only the ratings object (per-call, per-turn)
   const handleExportRatings = () => {
     const blob = new Blob([JSON.stringify(ratings, null, 2)], {
       type: "application/json",
@@ -62,17 +64,66 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  // Export full transcripts with ratings merged into Assistant turns
+  const handleExportAnnotatedTranscripts = () => {
+    const annotated = calls.map((call) => {
+      const callRatings = ratings[call.call_id] || {};
+      return {
+        call_id: call.call_id,
+        dialogue: call.dialogue.map((utt, idx) => {
+          const rating = callRatings[idx];
+          if (utt.author === "Assistant" && rating && rating.stars > 0) {
+            return {
+              ...utt,
+              rating_stars: rating.stars,
+              rating_comment: rating.comment || "",
+            };
+          }
+          return utt;
+        }),
+      };
+    });
+
+    const blob = new Blob([JSON.stringify(annotated, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "annotated_transcripts.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div style={{ display: "flex", height: "100vh", fontFamily: "sans-serif", fontSize: 14 }}>
+    <div
+      style={{
+        display: "flex",
+        height: "100vh",
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+        fontSize: 14,
+        backgroundColor: "#e5e7eb", // light grey background
+        color: "#111827", // dark text
+      }}
+    >
       {/* Sidebar – list of calls */}
       <aside
         style={{
           width: 260,
-          borderRight: "1px solid #ddd",
+          borderRight: "1px solid #d1d5db",
           overflowY: "auto",
+          backgroundColor: "#f9fafb",
         }}
       >
-        <div style={{ padding: 12, borderBottom: "1px solid #eee", fontWeight: 600 }}>
+        <div
+          style={{
+            padding: 12,
+            borderBottom: "1px solid #e5e7eb",
+            fontWeight: 700,
+            fontSize: 14,
+            backgroundColor: "#ffffff",
+          }}
+        >
           Calls
         </div>
         {calls.map((call) => (
@@ -85,9 +136,9 @@ function App() {
               textAlign: "left",
               padding: 10,
               border: "none",
-              borderBottom: "1px solid #f0f0f0",
+              borderBottom: "1px solid #e5e7eb",
               background:
-                call.call_id === selectedCallId ? "#e5e7eb" : "white",
+                call.call_id === selectedCallId ? "#dbeafe" : "#ffffff",
               cursor: "pointer",
             }}
           >
@@ -95,10 +146,11 @@ function App() {
               style={{
                 fontSize: 12,
                 fontWeight:
-                  call.call_id === selectedCallId ? 600 : 500,
+                  call.call_id === selectedCallId ? 700 : 500,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
+                color: "#111827",
               }}
             >
               Task: {call.call_id}
@@ -111,16 +163,33 @@ function App() {
       </aside>
 
       {/* Main – split view */}
-      <main style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+      <main
+        style={{
+          flex: 1,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          backgroundColor: "#e5e7eb",
+        }}
+      >
         {/* Left – transcript */}
         <section
           style={{
-            borderRight: "1px solid #ddd",
+            borderRight: "1px solid #d1d5db",
             padding: 12,
             overflowY: "auto",
+            backgroundColor: "#f3f4f6",
           }}
         >
-          <div style={{ marginBottom: 8, fontWeight: 600 }}>Transcript</div>
+          <div
+            style={{
+              marginBottom: 10,
+              fontWeight: 700,
+              fontSize: 15,
+              color: "#111827",
+            }}
+          >
+            Transcript
+          </div>
           {selectedCall ? (
             selectedCall.dialogue.map((utt, idx) => {
               const key = `${selectedCall.call_id}:${idx}`;
@@ -131,10 +200,11 @@ function App() {
                   ref={(el) => (utteranceRefs.current[key] = el)}
                   style={{
                     marginBottom: 8,
-                    padding: 8,
-                    borderRadius: 8,
-                    backgroundColor: isAssistant ? "#f3f4f6" : "white",
+                    padding: 10,
+                    borderRadius: 10,
+                    backgroundColor: isAssistant ? "#eff6ff" : "#ffffff",
                     border: "1px solid #e5e7eb",
+                    boxShadow: "0 1px 2px rgba(15, 23, 42, 0.03)",
                   }}
                 >
                   <div
@@ -142,12 +212,16 @@ function App() {
                       fontSize: 11,
                       fontWeight: 600,
                       marginBottom: 4,
-                      color: isAssistant ? "#1f2933" : "#6b7280",
+                      color: isAssistant ? "#1d4ed8" : "#4b5563",
+                      textTransform: "uppercase",
+                      letterSpacing: 0.4,
                     }}
                   >
                     {utt.author}
                   </div>
-                  <div>{utt.text}</div>
+                  <div style={{ fontSize: 14, color: "#111827" }}>
+                    {utt.text}
+                  </div>
                 </div>
               );
             })
@@ -158,23 +232,62 @@ function App() {
 
         {/* Right – ratings */}
         <section
-          style={{ padding: 12, overflowY: "auto", position: "relative" }}
+          style={{
+            padding: 12,
+            overflowY: "auto",
+            backgroundColor: "#f3f4f6",
+          }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div style={{ fontWeight: 600 }}>Rate Assistant Turns</div>
-            <button
-              onClick={handleExportRatings}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 10,
+              gap: 8,
+            }}
+          >
+            <div
               style={{
-                padding: "4px 8px",
-                fontSize: 12,
-                borderRadius: 6,
-                border: "1px solid #d1d5db",
-                cursor: "pointer",
-                background: "white",
+                fontWeight: 700,
+                fontSize: 15,
+                color: "#111827",
               }}
             >
-              Export ratings JSON
-            </button>
+              Rate Assistant Turns
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                onClick={handleExportRatings}
+                style={{
+                  padding: "6px 10px",
+                  fontSize: 12,
+                  borderRadius: 999,
+                  border: "1px solid #3b82f6",
+                  cursor: "pointer",
+                  background: "#3b82f6",
+                  color: "#ffffff",
+                  fontWeight: 500,
+                }}
+              >
+                Export ratings
+              </button>
+              <button
+                onClick={handleExportAnnotatedTranscripts}
+                style={{
+                  padding: "6px 10px",
+                  fontSize: 12,
+                  borderRadius: 999,
+                  border: "1px solid #10b981",
+                  cursor: "pointer",
+                  background: "#10b981",
+                  color: "#ffffff",
+                  fontWeight: 500,
+                }}
+              >
+                Export annotated transcripts
+              </button>
+            </div>
           </div>
 
           {selectedCall ? (
@@ -192,10 +305,11 @@ function App() {
                     key={u.idx}
                     style={{
                       border: "1px solid #e5e7eb",
-                      borderRadius: 8,
-                      padding: 8,
-                      marginBottom: 10,
-                      backgroundColor: "#f9fafb",
+                      borderRadius: 10,
+                      padding: 10,
+                      marginBottom: 12,
+                      backgroundColor: "#ffffff",
+                      boxShadow: "0 1px 3px rgba(15, 23, 42, 0.05)",
                     }}
                     onMouseEnter={() =>
                       scrollToUtterance(selectedCall.call_id, u.idx)
@@ -213,16 +327,17 @@ function App() {
                     <div
                       style={{
                         fontSize: 13,
-                        marginBottom: 6,
-                        maxHeight: 40,
+                        marginBottom: 8,
+                        maxHeight: 52,
                         overflow: "hidden",
+                        color: "#111827",
                       }}
                     >
                       {u.text}
                     </div>
 
                     {/* Stars */}
-                    <div style={{ marginBottom: 6 }}>
+                    <div style={{ marginBottom: 8 }}>
                       {[1, 2, 3, 4, 5].map((star) => (
                         <button
                           key={star}
@@ -239,7 +354,7 @@ function App() {
                             border: "none",
                             background: "transparent",
                             cursor: "pointer",
-                            fontSize: 18,
+                            fontSize: 20,
                             padding: 0,
                             marginRight: 4,
                             color:
@@ -265,12 +380,14 @@ function App() {
                       }
                       style={{
                         width: "100%",
-                        minHeight: 40,
+                        minHeight: 50,
                         fontSize: 12,
-                        padding: 4,
-                        borderRadius: 6,
+                        padding: 6,
+                        borderRadius: 8,
                         border: "1px solid #d1d5db",
                         resize: "vertical",
+                        backgroundColor: "#ffffff",
+                        color: "#111827",
                       }}
                     />
                   </div>
