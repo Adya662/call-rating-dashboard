@@ -11,6 +11,10 @@ function App() {
   const [ratings, setRatings] = useState({}); // { callId: { idx: { stars, comment } } }
   const [completedCalls, setCompletedCalls] = useState({}); // { callId: true }
 
+  // sidebar resizing
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+
   const utteranceRefs = useRef({}); // { "callId:idx": HTMLDivElement }
 
   // ---------------------------------------------------
@@ -145,6 +149,31 @@ function App() {
       console.warn("Failed to save completed calls to localStorage", e);
     }
   }, [completedCalls]);
+
+  // ---------------------------------------------------
+  // Sidebar resize mouse handlers
+  // ---------------------------------------------------
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizingSidebar) return;
+      // clamp width between 200 and 500 px
+      const newWidth = Math.min(Math.max(e.clientX, 200), 500);
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (isResizingSidebar) {
+        setIsResizingSidebar(false);
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizingSidebar]);
 
   const selectedCall = calls.find((c) => c.call_id === selectedCallId);
 
@@ -283,7 +312,7 @@ function App() {
         display: "flex",
         height: "100vh",
         width: "100vw",
-        overflowX: "auto", // horizontal scroll for whole app
+        overflowX: "auto",
         overflowY: "hidden",
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
         fontSize: 15,
@@ -294,19 +323,21 @@ function App() {
       {/* Sidebar – list of calls */}
       <aside
         style={{
-          width: 260,
-          minWidth: 260,
+          width: sidebarWidth,
+          minWidth: 200,
+          maxWidth: 500,
           borderRight: "1px solid #d1d5db",
           overflowY: "auto",
-          overflowX: "auto", // horizontal scroll
+          overflowX: "auto",
           whiteSpace: "nowrap",
           backgroundColor: "#f9fafb",
+          boxSizing: "border-box",
         }}
       >
         <div
           style={{
             padding: 12,
-            borderBottom: "1px solid "#e5e7eb",
+            borderBottom: "1px solid #e5e7eb",
             fontWeight: 700,
             fontSize: 15,
             backgroundColor: "#ffffff",
@@ -328,7 +359,7 @@ function App() {
             <div
               key={call.call_id}
               style={{
-                borderBottom: "1px solid "#e5e7eb",
+                borderBottom: "1px solid #e5e7eb",
                 background: rowBg,
                 padding: 8,
                 display: "flex",
@@ -386,15 +417,26 @@ function App() {
         })}
       </aside>
 
+      {/* Drag handle between sidebar and main */}
+      <div
+        onMouseDown={() => setIsResizingSidebar(true)}
+        style={{
+          width: 4,
+          cursor: "col-resize",
+          backgroundColor: isResizingSidebar ? "#bfdbfe" : "transparent",
+          borderRight: "1px solid #d1d5db",
+        }}
+      />
+
       {/* Main – split view */}
       <main
         style={{
           flex: 1,
-          minWidth: 900, // forces horizontal scroll when viewport is narrow
+          minWidth: 600,
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
           backgroundColor: "#e5e7eb",
-          overflowX: "auto", // horizontal scroll for the two-panel area
+          overflowX: "auto",
           overflowY: "hidden",
         }}
       >
@@ -404,7 +446,7 @@ function App() {
             borderRight: "1px solid #d1d5db",
             padding: 12,
             overflowY: "auto",
-            overflowX: "auto", // horizontal scroll inside transcript panel
+            overflowX: "auto",
             backgroundColor: "#f3f4f6",
           }}
         >
@@ -473,7 +515,7 @@ function App() {
           style={{
             padding: 12,
             overflowY: "auto",
-            overflowX: "auto", // horizontal scroll inside ratings panel
+            overflowX: "auto",
             backgroundColor: "#f3f4f6",
           }}
         >
