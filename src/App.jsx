@@ -101,7 +101,7 @@ function App() {
         display: "flex",
         height: "100vh",
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-        fontSize: 14,
+        fontSize: 15, // slightly larger base font
         backgroundColor: "#e5e7eb", // light grey background
         color: "#111827", // dark text
       }}
@@ -120,7 +120,7 @@ function App() {
             padding: 12,
             borderBottom: "1px solid #e5e7eb",
             fontWeight: 700,
-            fontSize: 14,
+            fontSize: 15,
             backgroundColor: "#ffffff",
           }}
         >
@@ -144,7 +144,7 @@ function App() {
           >
             <div
               style={{
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight:
                   call.call_id === selectedCallId ? 700 : 500,
                 whiteSpace: "nowrap",
@@ -155,7 +155,7 @@ function App() {
             >
               Task: {call.call_id}
             </div>
-            <div style={{ fontSize: 11, color: "#6b7280" }}>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>
               {call.dialogue?.length ?? 0} turns
             </div>
           </button>
@@ -184,7 +184,7 @@ function App() {
             style={{
               marginBottom: 10,
               fontWeight: 700,
-              fontSize: 15,
+              fontSize: 16,
               color: "#111827",
             }}
           >
@@ -200,7 +200,7 @@ function App() {
                   ref={(el) => (utteranceRefs.current[key] = el)}
                   style={{
                     marginBottom: 8,
-                    padding: 10,
+                    padding: 12,
                     borderRadius: 10,
                     backgroundColor: isAssistant ? "#eff6ff" : "#ffffff",
                     border: "1px solid #e5e7eb",
@@ -209,7 +209,7 @@ function App() {
                 >
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: 600,
                       marginBottom: 4,
                       color: isAssistant ? "#1d4ed8" : "#4b5563",
@@ -219,7 +219,13 @@ function App() {
                   >
                     {utt.author}
                   </div>
-                  <div style={{ fontSize: 14, color: "#111827" }}>
+                  <div
+                    style={{
+                      fontSize: 16, // larger transcript text
+                      color: "#111827",
+                      lineHeight: 1.45,
+                    }}
+                  >
                     {utt.text}
                   </div>
                 </div>
@@ -250,7 +256,7 @@ function App() {
             <div
               style={{
                 fontWeight: 700,
-                fontSize: 15,
+                fontSize: 16,
                 color: "#111827",
               }}
             >
@@ -261,7 +267,7 @@ function App() {
                 onClick={handleExportRatings}
                 style={{
                   padding: "6px 10px",
-                  fontSize: 12,
+                  fontSize: 13,
                   borderRadius: 999,
                   border: "1px solid #3b82f6",
                   cursor: "pointer",
@@ -276,7 +282,7 @@ function App() {
                 onClick={handleExportAnnotatedTranscripts}
                 style={{
                   padding: "6px 10px",
-                  fontSize: 12,
+                  fontSize: 13,
                   borderRadius: 999,
                   border: "1px solid #10b981",
                   cursor: "pointer",
@@ -317,7 +323,7 @@ function App() {
                   >
                     <div
                       style={{
-                        fontSize: 11,
+                        fontSize: 12,
                         color: "#6b7280",
                         marginBottom: 4,
                       }}
@@ -326,9 +332,9 @@ function App() {
                     </div>
                     <div
                       style={{
-                        fontSize: 13,
+                        fontSize: 14,
                         marginBottom: 8,
-                        maxHeight: 52,
+                        maxHeight: 60,
                         overflow: "hidden",
                         color: "#111827",
                       }}
@@ -354,7 +360,7 @@ function App() {
                             border: "none",
                             background: "transparent",
                             cursor: "pointer",
-                            fontSize: 20,
+                            fontSize: 22,
                             padding: 0,
                             marginRight: 4,
                             color:
@@ -380,8 +386,8 @@ function App() {
                       }
                       style={{
                         width: "100%",
-                        minHeight: 50,
-                        fontSize: 12,
+                        minHeight: 55,
+                        fontSize: 13,
                         padding: 6,
                         borderRadius: 8,
                         border: "1px solid #d1d5db",
