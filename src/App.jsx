@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "./supabaseClient";
 
 const RATINGS_STORAGE_KEY = "call_rating_dashboard_ratings_v1";
-const USER_ID = "demo-user"; // TODO: replace with real user id once you add auth
+const USER_ID = "demo-user";
 
 function App() {
   const [calls, setCalls] = useState([]);
@@ -12,7 +12,7 @@ function App() {
   const utteranceRefs = useRef({}); // { "callId:idx": HTMLDivElement }
 
   // ---------------------------------------------------
-  // Load transcripts.json from /public
+  // Load transcripts.json
   // ---------------------------------------------------
   useEffect(() => {
     fetch("/transcripts.json")
@@ -30,7 +30,7 @@ function App() {
   }, []);
 
   // ---------------------------------------------------
-  // Load ratings from localStorage on first mount
+  // Load ratings from localStorage
   // ---------------------------------------------------
   useEffect(() => {
     try {
@@ -47,7 +47,7 @@ function App() {
   }, []);
 
   // ---------------------------------------------------
-  // Load shared ratings from Supabase on startup
+  // Load shared ratings from Supabase, merge safely
   // ---------------------------------------------------
   useEffect(() => {
     const loadSharedRatings = async () => {
@@ -60,19 +60,34 @@ function App() {
           console.error("Error loading ratings from Supabase:", error);
           return;
         }
-
         if (!data) return;
 
-        const formatted = {};
-        data.forEach((r) => {
-          if (!formatted[r.call_id]) formatted[r.call_id] = {};
-          formatted[r.call_id][r.turn_index] = {
-            stars: r.stars,
-            comment: r.comment || "",
-          };
-        });
+        setRatings((prev) => {
+          const next = { ...prev };
 
-        setRatings(formatted);
+          data.forEach((r) => {
+            const callId = r.call_id;
+            const idx = r.turn_index;
+            if (!callId || idx == null) return;
+
+            if (!next[callId]) next[callId] = {};
+
+            const local = next[callId][idx] || {};
+            const remoteStars = typeof r.stars === "number" ? r.stars : 0;
+            const remoteComment =
+              typeof r.comment === "string" && r.comment !== "EMPTY"
+                ? r.comment.trim()
+                : "";
+
+            // Only use remote value if it's non-empty; otherwise keep local
+            next[callId][idx] = {
+              stars: remoteStars || local.stars || 0,
+              comment: remoteComment || local.comment || "",
+            };
+          });
+
+          return next;
+        });
       } catch (e) {
         console.error("Unexpected error loading Supabase ratings:", e);
       }
@@ -99,51 +114,48 @@ function App() {
 
   // ---------------------------------------------------
   // Update rating locally + send to Supabase
-  // (stars AND comment both saved)
   // ---------------------------------------------------
-  const handleRatingChange = (callId, idx, field, value) => {
-    setRatings((prev) => {
-      const prevForCall = prev[callId] || {};
-      const prevForUtterance = prevForCall[idx] || {
-        stars: 0,
-        comment: "",
-      };
+  const handleRatingChange = async (callId, idx, field, value) => {
+    const prevForCall = ratings[callId] || {};
+    const prevForUtterance = prevForCall[idx] || { stars: 0, comment: "" };
 
-      const updatedUtterance = {
-        ...prevForUtterance,
-        [field]: value,
-      };
+    const newStars =
+      field === "stars" ? value : prevForUtterance.stars || 0;
+    const newComment =
+      field === "comment" ? value : prevForUtterance.comment || "";
 
-      const updatedRatings = {
-        ...prev,
-        [callId]: {
-          ...prevForCall,
-          [idx]: updatedUtterance,
+    // Treat "EMPTY" as blank so we don't store it anywhere
+    const finalComment =
+      newComment === "EMPTY" || newComment == null ? "" : newComment;
+
+    // 1) Update local state (drives localStorage)
+    setRatings((prev) => ({
+      ...prev,
+      [callId]: {
+        ...(prev[callId] || {}),
+        [idx]: {
+          stars: newStars,
+          comment: finalComment,
         },
-      };
+      },
+    }));
 
-      // Fire-and-forget Supabase upsert using the latest values
-      const { stars, comment } = updatedUtterance;
-      supabase
-        .from("call_ratings")
-        .upsert({
-          call_id: callId,
-          turn_index: idx,
-          stars: stars || 0,
-          comment: comment || "",
-          user_id: USER_ID,
-        })
-        .then(({ error }) => {
-          if (error) {
-            console.error("Supabase save error:", error);
-          }
-        })
-        .catch((e) => {
-          console.error("Unexpected Supabase save error:", e);
-        });
+    // 2) Upsert into Supabase
+    try {
+      const { error } = await supabase.from("call_ratings").upsert({
+        call_id: callId,
+        turn_index: idx,
+        stars: newStars,
+        comment: finalComment,
+        user_id: USER_ID,
+      });
 
-      return updatedRatings;
-    });
+      if (error) {
+        console.error("Supabase save error:", error);
+      }
+    } catch (e) {
+      console.error("Unexpected Supabase save error:", e);
+    }
   };
 
   const scrollToUtterance = (callId, idx) => {
@@ -154,7 +166,9 @@ function App() {
     }
   };
 
-  // Helper: build annotated version of all calls using current ratings
+  // ---------------------------------------------------
+  // Build annotated version of all calls
+  // ---------------------------------------------------
   const buildAnnotatedCalls = () => {
     return calls.map((call) => {
       const callRatings = ratings[call.call_id] || {};
@@ -175,7 +189,6 @@ function App() {
     });
   };
 
-  // Download annotated JSON for ALL calls
   const handleExportAnnotatedTranscriptsAll = () => {
     const annotated = buildAnnotatedCalls();
     const blob = new Blob([JSON.stringify(annotated, null, 2)], {
@@ -189,7 +202,6 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  // Download annotated JSON for ONLY the current call
   const handleExportAnnotatedTranscriptCurrent = () => {
     if (!selectedCall) return;
     const annotatedAll = buildAnnotatedCalls();
@@ -258,17 +270,6 @@ function App() {
           >
             <div
               style={{
-                fontSize: 12,
-                fontWeight: 600,
-                marginBottom: 2,
-                color: "#6b7280",
-              }}
-            >
-              {/* Serial number for each task */}
-              Task {index + 1}
-            </div>
-            <div
-              style={{
                 fontSize: 13,
                 fontWeight:
                   call.call_id === selectedCallId ? 700 : 500,
@@ -278,7 +279,7 @@ function App() {
                 color: "#111827",
               }}
             >
-              {call.call_id}
+              Task {index + 1}: {call.call_id}
             </div>
             <div style={{ fontSize: 12, color: "#6b7280" }}>
               {call.dialogue?.length ?? 0} turns
