@@ -5,15 +5,38 @@ const RATINGS_STORAGE_KEY = "call_rating_dashboard_ratings_v1";
 const COMPLETED_CALLS_KEY = "call_rating_dashboard_completed_v1";
 const USER_ID = "demo-user";
 
+const EMPTY_RATING = {
+  codeSwitch: 0,
+  colloquialness: 0,
+  emotionalIntelligence: 0,
+  sopAdherence: 0,
+  idealResponse: "",
+};
+
+const METRICS = [
+  { key: "codeSwitch", label: "Code-Switch - Response Level" },
+  { key: "colloquialness", label: "Colloquialness - Response Level" },
+  { key: "emotionalIntelligence", label: "Emotional Intelligence - Response Level" },
+  {
+    key: "sopAdherence",
+    label:
+      "SOP Adherence (Instruction Adherence / Error Recovery / Task Success) - Conversational Level",
+  },
+];
+
 function App() {
   const [calls, setCalls] = useState([]);
   const [selectedCallId, setSelectedCallId] = useState(null);
-  const [ratings, setRatings] = useState({}); // { callId: { idx: { stars, comment } } }
+  // ratings: { [callId]: { [turnIndex]: { ...metrics } } }
+  const [ratings, setRatings] = useState({});
   const [completedCalls, setCompletedCalls] = useState({}); // { callId: true }
 
   // sidebar resizing
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+
+  // modal state: { callId, idx } | null
+  const [activeRatingTarget, setActiveRatingTarget] = useState(null);
 
   const utteranceRefs = useRef({}); // { "callId:idx": HTMLDivElement }
 
@@ -71,6 +94,9 @@ function App() {
 
   // ---------------------------------------------------
   // Load shared ratings from Supabase, merge safely
+  // EXPECTED TABLE COLUMNS:
+  // call_id, turn_index, user_id,
+  // code_switch, colloquialness, emotional_intelligence, sop_adherence, ideal_response
   // ---------------------------------------------------
   useEffect(() => {
     const loadSharedRatings = async () => {
@@ -78,7 +104,7 @@ function App() {
         const { data, error } = await supabase
           .from("call_ratings")
           .select("*")
-          .eq("user_id", USER_ID); // only this user's rows
+          .eq("user_id", USER_ID);
 
         console.log("Loaded ratings from Supabase:", { data, error });
 
@@ -98,17 +124,26 @@ function App() {
 
             if (!next[callId]) next[callId] = {};
 
-            const local = next[callId][idx] || {};
-            const remoteStars = typeof r.stars === "number" ? r.stars : 0;
-            const remoteComment =
-              typeof r.comment === "string" && r.comment !== "EMPTY"
-                ? r.comment.trim()
-                : "";
+            const existing = next[callId][idx] || { ...EMPTY_RATING };
 
-            // Only use remote value if it's non-empty; otherwise keep local
             next[callId][idx] = {
-              stars: remoteStars || local.stars || 0,
-              comment: remoteComment || local.comment || "",
+              ...existing,
+              codeSwitch:
+                typeof r.code_switch === "number" ? r.code_switch : existing.codeSwitch || 0,
+              colloquialness:
+                typeof r.colloquialness === "number"
+                  ? r.colloquialness
+                  : existing.colloquialness || 0,
+              emotionalIntelligence:
+                typeof r.emotional_intelligence === "number"
+                  ? r.emotional_intelligence
+                  : existing.emotionalIntelligence || 0,
+              sopAdherence:
+                typeof r.sop_adherence === "number" ? r.sop_adherence : existing.sopAdherence || 0,
+              idealResponse:
+                typeof r.ideal_response === "string"
+                  ? r.ideal_response
+                  : existing.idealResponse || "",
             };
           });
 
@@ -127,10 +162,7 @@ function App() {
   // ---------------------------------------------------
   useEffect(() => {
     try {
-      window.localStorage.setItem(
-        RATINGS_STORAGE_KEY,
-        JSON.stringify(ratings)
-      );
+      window.localStorage.setItem(RATINGS_STORAGE_KEY, JSON.stringify(ratings));
     } catch (e) {
       console.warn("Failed to save ratings to localStorage", e);
     }
@@ -141,10 +173,7 @@ function App() {
   // ---------------------------------------------------
   useEffect(() => {
     try {
-      window.localStorage.setItem(
-        COMPLETED_CALLS_KEY,
-        JSON.stringify(completedCalls)
-      );
+      window.localStorage.setItem(COMPLETED_CALLS_KEY, JSON.stringify(completedCalls));
     } catch (e) {
       console.warn("Failed to save completed calls to localStorage", e);
     }
@@ -156,7 +185,6 @@ function App() {
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (!isResizingSidebar) return;
-      // clamp width between 200 and 500 px
       const newWidth = Math.min(Math.max(e.clientX, 200), 500);
       setSidebarWidth(newWidth);
     };
@@ -179,29 +207,24 @@ function App() {
 
   // ---------------------------------------------------
   // Update rating locally + send to Supabase
+  // field is one of:
+  // "codeSwitch" | "colloquialness" | "emotionalIntelligence" | "sopAdherence" | "idealResponse"
   // ---------------------------------------------------
   const handleRatingChange = async (callId, idx, field, value) => {
     const prevForCall = ratings[callId] || {};
-    const prevForUtterance = prevForCall[idx] || { stars: 0, comment: "" };
+    const prevForUtterance = prevForCall[idx] || { ...EMPTY_RATING };
 
-    const newStars =
-      field === "stars" ? value : prevForUtterance.stars || 0;
-    const newComment =
-      field === "comment" ? value : prevForUtterance.comment || "";
-
-    // Treat "EMPTY" as blank so we don't store it anywhere
-    const finalComment =
-      newComment === "EMPTY" || newComment == null ? "" : newComment;
+    const updated = {
+      ...prevForUtterance,
+      [field]: field === "idealResponse" ? value : value || 0,
+    };
 
     // 1) Update local state (drives localStorage)
     setRatings((prev) => ({
       ...prev,
       [callId]: {
         ...(prev[callId] || {}),
-        [idx]: {
-          stars: newStars,
-          comment: finalComment,
-        },
+        [idx]: updated,
       },
     }));
 
@@ -213,9 +236,12 @@ function App() {
           {
             call_id: callId,
             turn_index: idx,
-            stars: newStars,
-            comment: finalComment,
             user_id: USER_ID,
+            code_switch: updated.codeSwitch || 0,
+            colloquialness: updated.colloquialness || 0,
+            emotional_intelligence: updated.emotionalIntelligence || 0,
+            sop_adherence: updated.sopAdherence || 0,
+            ideal_response: updated.idealResponse || "",
           },
           {
             onConflict: "call_id,turn_index,user_id",
@@ -241,6 +267,15 @@ function App() {
     }
   };
 
+  const openRatingModal = (callId, idx) => {
+    setActiveRatingTarget({ callId, idx });
+    scrollToUtterance(callId, idx);
+  };
+
+  const closeRatingModal = () => {
+    setActiveRatingTarget(null);
+  };
+
   // ---------------------------------------------------
   // Toggle call completion
   // ---------------------------------------------------
@@ -252,7 +287,7 @@ function App() {
   };
 
   // ---------------------------------------------------
-  // Build annotated version of all calls
+  // Build annotated version of all calls (for download)
   // ---------------------------------------------------
   const buildAnnotatedCalls = () => {
     return calls.map((call) => {
@@ -261,12 +296,24 @@ function App() {
         call_id: call.call_id,
         dialogue: call.dialogue.map((utt, idx) => {
           const rating = callRatings[idx];
-          if (utt.author === "Assistant" && rating && rating.stars > 0) {
-            return {
-              ...utt,
-              rating_stars: rating.stars,
-              rating_comment: rating.comment || "",
-            };
+          if (utt.author === "Assistant" && rating) {
+            const hasAnyRating =
+              rating.codeSwitch ||
+              rating.colloquialness ||
+              rating.emotionalIntelligence ||
+              rating.sopAdherence ||
+              (rating.idealResponse || "").trim().length > 0;
+
+            if (hasAnyRating) {
+              return {
+                ...utt,
+                rating_code_switch: rating.codeSwitch || 0,
+                rating_colloquialness: rating.colloquialness || 0,
+                rating_emotional_intelligence: rating.emotionalIntelligence || 0,
+                rating_sop_adherence: rating.sopAdherence || 0,
+                rating_ideal_response: rating.idealResponse || "",
+              };
+            }
           }
           return utt;
         }),
@@ -290,9 +337,7 @@ function App() {
   const handleExportAnnotatedTranscriptCurrent = () => {
     if (!selectedCall) return;
     const annotatedAll = buildAnnotatedCalls();
-    const current = annotatedAll.find(
-      (c) => c.call_id === selectedCall.call_id
-    );
+    const current = annotatedAll.find((c) => c.call_id === selectedCall.call_id);
     if (!current) return;
 
     const blob = new Blob([JSON.stringify(current, null, 2)], {
@@ -305,6 +350,19 @@ function App() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  // derive info for active modal
+  let activeUtteranceText = "";
+  let activeTurnIndex = null;
+  let activeRating = { ...EMPTY_RATING };
+  if (activeRatingTarget) {
+    const c = calls.find((call) => call.call_id === activeRatingTarget.callId);
+    const u = c?.dialogue?.[activeRatingTarget.idx];
+    activeUtteranceText = u?.text || "";
+    activeTurnIndex = activeRatingTarget.idx;
+    activeRating =
+      ratings[activeRatingTarget.callId]?.[activeRatingTarget.idx] || { ...EMPTY_RATING };
+  }
 
   return (
     <div
@@ -329,7 +387,6 @@ function App() {
           borderRight: "1px solid #d1d5db",
           overflowY: "auto",
           overflowX: "auto",
-          whiteSpace: "nowrap",
           backgroundColor: "#f9fafb",
           boxSizing: "border-box",
         }}
@@ -341,7 +398,6 @@ function App() {
             fontWeight: 700,
             fontSize: 15,
             backgroundColor: "#ffffff",
-            whiteSpace: "nowrap",
           }}
         >
           Calls
@@ -383,9 +439,7 @@ function App() {
                   style={{
                     fontSize: 13,
                     fontWeight: isSelected ? 700 : 500,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
+                    whiteSpace: "normal", // show full call_id (wrap instead of ellipsis)
                     color: "#111827",
                   }}
                 >
@@ -428,19 +482,19 @@ function App() {
         }}
       />
 
-      {/* Main – split view */}
+      {/* Main – middle transcript + right panel */}
       <main
         style={{
           flex: 1,
-          minWidth: 600,
+          minWidth: 800,
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: "2fr 1fr",
           backgroundColor: "#e5e7eb",
           overflowX: "auto",
           overflowY: "hidden",
         }}
       >
-        {/* Left – transcript */}
+        {/* Middle – transcript */}
         <section
           style={{
             borderRight: "1px solid #d1d5db",
@@ -459,7 +513,7 @@ function App() {
               whiteSpace: "nowrap",
             }}
           >
-            Transcript
+            Transcript (click an Assistant turn to rate)
           </div>
           {selectedCall ? (
             selectedCall.dialogue.map((utt, idx) => {
@@ -469,6 +523,9 @@ function App() {
                 <div
                   key={key}
                   ref={(el) => (utteranceRefs.current[key] = el)}
+                  onClick={() =>
+                    isAssistant && openRatingModal(selectedCall.call_id, idx)
+                  }
                   style={{
                     marginBottom: 8,
                     padding: 12,
@@ -477,6 +534,7 @@ function App() {
                     border: "1px solid #e5e7eb",
                     boxShadow: "0 1px 2px rgba(15, 23, 42, 0.03)",
                     overflowX: "auto",
+                    cursor: isAssistant ? "pointer" : "default",
                   }}
                 >
                   <div
@@ -490,7 +548,7 @@ function App() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {utt.author}
+                    {utt.author} {isAssistant ? `(click to rate)` : ""}
                   </div>
                   <div
                     style={{
@@ -510,7 +568,7 @@ function App() {
           )}
         </section>
 
-        {/* Right – ratings */}
+        {/* Right – info + downloads */}
         <section
           style={{
             padding: 12,
@@ -536,7 +594,7 @@ function App() {
                 color: "#111827",
               }}
             >
-              Rate Assistant Turns
+              Ratings & Export
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <button
@@ -574,116 +632,310 @@ function App() {
             </div>
           </div>
 
-          {selectedCall ? (
-            selectedCall.dialogue
-              .map((utt, idx) => ({ ...utt, idx }))
-              .filter((u) => u.author === "Assistant")
-              .map((u) => {
-                const r =
-                  ratings[selectedCall.call_id]?.[u.idx] || {
-                    stars: 0,
-                    comment: "",
-                  };
-                return (
-                  <div
-                    key={u.idx}
-                    style={{
-                      border: "1px solid #e5e7eb",
-                      borderRadius: 10,
-                      padding: 10,
-                      marginBottom: 12,
-                      backgroundColor: "#ffffff",
-                      boxShadow: "0 1px 3px rgba(15, 23, 42, 0.05)",
-                      overflowX: "auto",
-                    }}
-                    onMouseEnter={() =>
-                      scrollToUtterance(selectedCall.call_id, u.idx)
-                    }
-                  >
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: "#6b7280",
-                        marginBottom: 4,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Assistant @ turn {u.idx}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 14,
-                        marginBottom: 8,
-                        maxHeight: 60,
-                        overflow: "hidden",
-                        color: "#111827",
-                      }}
-                    >
-                      {u.text}
-                    </div>
+          <div
+            style={{
+              fontSize: 13,
+              color: "#4b5563",
+              marginBottom: 12,
+            }}
+          >
+            Click any <strong>Assistant</strong> turn in the transcript to open the rating dialog
+            and label it on:
+            <ul style={{ paddingLeft: 18, marginTop: 4 }}>
+              <li>Code-Switch</li>
+              <li>Colloquialness</li>
+              <li>Emotional Intelligence</li>
+              <li>SOP Adherence</li>
+            </ul>
+          </div>
 
-                    {/* Stars */}
-                    <div style={{ marginBottom: 8 }}>
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                          key={star}
-                          type="button"
-                          onClick={() =>
-                            handleRatingChange(
-                              selectedCall.call_id,
-                              u.idx,
-                              "stars",
-                              star
-                            )
-                          }
-                          style={{
-                            border: "none",
-                            background: "transparent",
-                            cursor: "pointer",
-                            fontSize: 22,
-                            padding: 0,
-                            marginRight: 4,
-                            color:
-                              star <= r.stars ? "#f59e0b" : "#d1d5db",
-                          }}
-                        >
-                          ★
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Comment */}
-                    <textarea
-                      placeholder="Custom feedback for this assistant utterance..."
-                      value={r.comment}
-                      onChange={(e) =>
-                        handleRatingChange(
-                          selectedCall.call_id,
-                          u.idx,
-                          "comment",
-                          e.target.value
-                        )
-                      }
-                      style={{
-                        width: "100%",
-                        minHeight: 55,
-                        fontSize: 13,
-                        padding: 6,
-                        borderRadius: 8,
-                        border: "1px solid #d1d5db",
-                        resize: "vertical",
-                        backgroundColor: "#ffffff",
-                        color: "#111827",
-                      }}
-                    />
-                  </div>
-                );
-              })
-          ) : (
-            <div>Select a call to start rating.</div>
+          {activeTurnIndex != null && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: 10,
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                backgroundColor: "#ffffff",
+                boxShadow: "0 1px 2px rgba(15, 23, 42, 0.03)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#6b7280",
+                  marginBottom: 4,
+                }}
+              >
+                Currently selected: Assistant @ turn {activeTurnIndex}
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#111827",
+                  maxHeight: 80,
+                  overflow: "hidden",
+                  marginBottom: 8,
+                }}
+              >
+                {activeUtteranceText}
+              </div>
+              {METRICS.map((m) => (
+                <div
+                  key={m.key}
+                  style={{
+                    fontSize: 12,
+                    color: "#4b5563",
+                    marginBottom: 4,
+                  }}
+                >
+                  {m.label}:{" "}
+                  <strong>
+                    {activeRating[m.key] ? `${activeRating[m.key]} / 5` : "not rated"}
+                  </strong>
+                </div>
+              ))}
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#4b5563",
+                  marginTop: 6,
+                }}
+              >
+                Ideal response:{" "}
+                {activeRating.idealResponse ? (
+                  <span>"{activeRating.idealResponse}"</span>
+                ) : (
+                  <em>not provided</em>
+                )}
+              </div>
+              <button
+                style={{
+                  marginTop: 10,
+                  padding: "4px 8px",
+                  fontSize: 12,
+                  borderRadius: 999,
+                  border: "1px solid #6366f1",
+                  backgroundColor: "#6366f1",
+                  color: "#ffffff",
+                  cursor: "pointer",
+                }}
+                onClick={() =>
+                  activeRatingTarget &&
+                  openRatingModal(activeRatingTarget.callId, activeRatingTarget.idx)
+                }
+              >
+                Edit ratings
+              </button>
+            </div>
           )}
         </section>
       </main>
+
+      {/* Modal for per-utterance ratings */}
+      {activeRatingTarget && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+          }}
+          onClick={closeRatingModal}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(800px, 95vw)",
+              maxHeight: "90vh",
+              backgroundColor: "#ffffff",
+              borderRadius: 12,
+              boxShadow: "0 20px 40px rgba(15,23,42,0.25)",
+              padding: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 4,
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: 16,
+                }}
+              >
+                Rate Assistant @ turn {activeTurnIndex}
+              </div>
+              <button
+                onClick={closeRatingModal}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  fontSize: 18,
+                  lineHeight: 1,
+                }}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                fontSize: 13,
+                color: "#6b7280",
+              }}
+            >
+              Click stars for each metric and optionally write the ideal response for this turn.
+            </div>
+
+            <div
+              style={{
+                padding: 10,
+                borderRadius: 8,
+                backgroundColor: "#f9fafb",
+                border: "1px solid #e5e7eb",
+                maxHeight: 120,
+                overflowY: "auto",
+                fontSize: 14,
+              }}
+            >
+              {activeUtteranceText}
+            </div>
+
+            <div style={{ marginTop: 4 }}>
+              {METRICS.map((metric) => (
+                <div
+                  key={metric.key}
+                  style={{
+                    marginBottom: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13,
+                      marginBottom: 2,
+                      color: "#111827",
+                    }}
+                  >
+                    {metric.label}
+                  </div>
+                  <div>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() =>
+                          handleRatingChange(
+                            activeRatingTarget.callId,
+                            activeRatingTarget.idx,
+                            metric.key,
+                            star
+                          )
+                        }
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          cursor: "pointer",
+                          fontSize: 22,
+                          padding: 0,
+                          marginRight: 4,
+                          color:
+                            star <= (activeRating[metric.key] || 0)
+                              ? "#f59e0b"
+                              : "#d1d5db",
+                        }}
+                      >
+                        ★
+                      </button>
+                    ))}
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "#4b5563",
+                        marginLeft: 6,
+                      }}
+                    >
+                      {activeRating[metric.key]
+                        ? `${activeRating[metric.key]} / 5`
+                        : "Not rated"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 4 }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  marginBottom: 4,
+                  color: "#111827",
+                }}
+              >
+                Ideal response for this assistant turn
+              </div>
+              <textarea
+                value={activeRating.idealResponse}
+                onChange={(e) =>
+                  handleRatingChange(
+                    activeRatingTarget.callId,
+                    activeRatingTarget.idx,
+                    "idealResponse",
+                    e.target.value
+                  )
+                }
+                placeholder="Write the ideal response you would want the assistant to give here..."
+                style={{
+                  width: "100%",
+                  minHeight: 80,
+                  fontSize: 13,
+                  padding: 8,
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  resize: "vertical",
+                  backgroundColor: "#ffffff",
+                  color: "#111827",
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: 10,
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 8,
+              }}
+            >
+              <button
+                onClick={closeRatingModal}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 13,
+                  borderRadius: 999,
+                  border: "1px solid #d1d5db",
+                  backgroundColor: "#ffffff",
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
