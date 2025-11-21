@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { supabase } from "./supabaseClient";
 
 const RATINGS_STORAGE_KEY = "call_rating_dashboard_ratings_v1";
+const USER_ID = "demo-user"; // TODO: replace with real user id once you add auth
 
 function App() {
   const [calls, setCalls] = useState([]);
@@ -9,7 +11,9 @@ function App() {
 
   const utteranceRefs = useRef({}); // { "callId:idx": HTMLDivElement }
 
+  // ---------------------------------------------------
   // Load transcripts.json from /public
+  // ---------------------------------------------------
   useEffect(() => {
     fetch("/transcripts.json")
       .then((r) => r.json())
@@ -25,7 +29,9 @@ function App() {
       });
   }, []);
 
+  // ---------------------------------------------------
   // Load ratings from localStorage on first mount
+  // ---------------------------------------------------
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(RATINGS_STORAGE_KEY);
@@ -40,7 +46,45 @@ function App() {
     }
   }, []);
 
+  // ---------------------------------------------------
+  // STEP 8: Load shared ratings from Supabase on startup
+  //         (overrides localStorage if data exists)
+  // ---------------------------------------------------
+  useEffect(() => {
+    const loadSharedRatings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("call_ratings")
+          .select("*");
+
+        if (error) {
+          console.error("Error loading ratings from Supabase:", error);
+          return;
+        }
+
+        if (!data) return;
+
+        const formatted = {};
+        data.forEach((r) => {
+          if (!formatted[r.call_id]) formatted[r.call_id] = {};
+          formatted[r.call_id][r.turn_index] = {
+            stars: r.stars,
+            comment: r.comment || "",
+          };
+        });
+
+        setRatings(formatted);
+      } catch (e) {
+        console.error("Unexpected error loading Supabase ratings:", e);
+      }
+    };
+
+    loadSharedRatings();
+  }, []);
+
+  // ---------------------------------------------------
   // Save ratings to localStorage whenever they change
+  // ---------------------------------------------------
   useEffect(() => {
     try {
       window.localStorage.setItem(
@@ -54,27 +98,47 @@ function App() {
 
   const selectedCall = calls.find((c) => c.call_id === selectedCallId);
 
-  const handleRatingChange = (callId, idx, field, value) => {
-    setRatings((prev) => {
-      const prevForCall = prev[callId] || {};
-      const prevForUtterance = prevForCall[idx] || { stars: 0, comment: "" };
+  // ---------------------------------------------------
+  // STEP 7: Update rating locally + send to Supabase
+  // ---------------------------------------------------
+  const handleRatingChange = async (callId, idx, field, value) => {
+    // 1) Compute new stars/comment based on existing state
+    const prevForCall = ratings[callId] || {};
+    const prevForUtterance = prevForCall[idx] || { stars: 0, comment: "" };
 
-      const updated = {
-        ...prev,
-        [callId]: {
-          ...prevForCall,
-          [idx]: {
-            ...prevForUtterance,
-            [field]: value,
-          },
+    const newStars =
+      field === "stars" ? value : prevForUtterance.stars || 0;
+    const newComment =
+      field === "comment" ? value : prevForUtterance.comment || "";
+
+    // 2) Update local React state (and thus localStorage)
+    setRatings((prev) => ({
+      ...prev,
+      [callId]: {
+        ...(prev[callId] || {}),
+        [idx]: {
+          stars: newStars,
+          comment: newComment,
         },
-      };
+      },
+    }));
 
-      // 🔌 FUTURE: here is a good place to also POST to a backend,
-      // e.g. fetch("/api/ratings", { method: "POST", body: JSON.stringify({ callId, idx, ...updated[callId][idx] }) })
+    // 3) Upsert into Supabase (shared backend)
+    try {
+      const { error } = await supabase.from("call_ratings").upsert({
+        call_id: callId,
+        turn_index: idx,
+        stars: newStars,
+        comment: newComment,
+        user_id: USER_ID,
+      });
 
-      return updated;
-    });
+      if (error) {
+        console.error("Supabase save error:", error);
+      }
+    } catch (e) {
+      console.error("Unexpected Supabase save error:", e);
+    }
   };
 
   const scrollToUtterance = (callId, idx) => {
