@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "./supabaseClient";
 
 const RATINGS_STORAGE_KEY = "call_rating_dashboard_ratings_v1";
+const COMPLETED_CALLS_KEY = "call_rating_dashboard_completed_v1";
 const USER_ID = "demo-user";
 
 function App() {
   const [calls, setCalls] = useState([]);
   const [selectedCallId, setSelectedCallId] = useState(null);
   const [ratings, setRatings] = useState({}); // { callId: { idx: { stars, comment } } }
+  const [completedCalls, setCompletedCalls] = useState({}); // { callId: true }
 
   const utteranceRefs = useRef({}); // { "callId:idx": HTMLDivElement }
 
@@ -43,6 +45,23 @@ function App() {
       }
     } catch (e) {
       console.warn("Failed to load ratings from localStorage", e);
+    }
+  }, []);
+
+  // ---------------------------------------------------
+  // Load completed calls from localStorage
+  // ---------------------------------------------------
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(COMPLETED_CALLS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          setCompletedCalls(parsed);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load completed calls from localStorage", e);
     }
   }, []);
 
@@ -110,6 +129,20 @@ function App() {
     }
   }, [ratings]);
 
+  // ---------------------------------------------------
+  // Save completed calls to localStorage whenever they change
+  // ---------------------------------------------------
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        COMPLETED_CALLS_KEY,
+        JSON.stringify(completedCalls)
+      );
+    } catch (e) {
+      console.warn("Failed to save completed calls to localStorage", e);
+    }
+  }, [completedCalls]);
+
   const selectedCall = calls.find((c) => c.call_id === selectedCallId);
 
   // ---------------------------------------------------
@@ -164,6 +197,16 @@ function App() {
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
+  };
+
+  // ---------------------------------------------------
+  // Toggle call completion
+  // ---------------------------------------------------
+  const toggleCallCompleted = (callId) => {
+    setCompletedCalls((prev) => ({
+      ...prev,
+      [callId]: !prev[callId],
+    }));
   };
 
   // ---------------------------------------------------
@@ -238,6 +281,7 @@ function App() {
           width: 260,
           borderRight: "1px solid #d1d5db",
           overflowY: "auto",
+          overflowX: "auto",
           backgroundColor: "#f9fafb",
         }}
       >
@@ -252,40 +296,74 @@ function App() {
         >
           Calls
         </div>
-        {calls.map((call, index) => (
-          <button
-            key={call.call_id}
-            onClick={() => setSelectedCallId(call.call_id)}
-            style={{
-              display: "block",
-              width: "100%",
-              textAlign: "left",
-              padding: 10,
-              border: "none",
-              borderBottom: "1px solid #e5e7eb",
-              background:
-                call.call_id === selectedCallId ? "#dbeafe" : "#ffffff",
-              cursor: "pointer",
-            }}
-          >
+        {calls.map((call, index) => {
+          const isSelected = call.call_id === selectedCallId;
+          const isCompleted = !!completedCalls[call.call_id];
+
+          let rowBg = "#ffffff";
+          if (isCompleted && isSelected) rowBg = "#bbf7d0"; // darker green
+          else if (isCompleted) rowBg = "#dcfce7"; // light green
+          else if (isSelected) rowBg = "#dbeafe"; // blue
+
+          return (
             <div
+              key={call.call_id}
               style={{
-                fontSize: 13,
-                fontWeight:
-                  call.call_id === selectedCallId ? 700 : 500,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                color: "#111827",
+                borderBottom: "1px solid #e5e7eb",
+                background: rowBg,
+                padding: 8,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
               }}
             >
-              Task {index + 1}: {call.call_id}
+              <button
+                onClick={() => setSelectedCallId(call.call_id)}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: 4,
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: isSelected ? 700 : 500,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    color: "#111827",
+                  }}
+                >
+                  Task {index + 1}: {call.call_id}
+                </div>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>
+                  {call.dialogue?.length ?? 0} turns
+                </div>
+              </button>
+              <button
+                onClick={() => toggleCallCompleted(call.call_id)}
+                style={{
+                  alignSelf: "flex-start",
+                  padding: "2px 8px",
+                  fontSize: 11,
+                  borderRadius: 999,
+                  border: "1px solid #10b981",
+                  cursor: "pointer",
+                  background: isCompleted ? "#10b981" : "#ffffff",
+                  color: isCompleted ? "#ffffff" : "#10b981",
+                  fontWeight: 600,
+                }}
+              >
+                {isCompleted ? "Completed ✓" : "Mark done"}
+              </button>
             </div>
-            <div style={{ fontSize: 12, color: "#6b7280" }}>
-              {call.dialogue?.length ?? 0} turns
-            </div>
-          </button>
-        ))}
+          );
+        })}
       </aside>
 
       {/* Main – split view */}
@@ -295,6 +373,8 @@ function App() {
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
           backgroundColor: "#e5e7eb",
+          overflowX: "auto", // sideways scroll if viewport is narrow
+          minWidth: 900, // ensure content can scroll horizontally
         }}
       >
         {/* Left – transcript */}
@@ -303,6 +383,7 @@ function App() {
             borderRight: "1px solid #d1d5db",
             padding: 12,
             overflowY: "auto",
+            overflowX: "auto",
             backgroundColor: "#f3f4f6",
           }}
         >
@@ -367,6 +448,7 @@ function App() {
           style={{
             padding: 12,
             overflowY: "auto",
+            overflowX: "auto",
             backgroundColor: "#f3f4f6",
           }}
         >
