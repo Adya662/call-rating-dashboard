@@ -1,23 +1,25 @@
-/* FORCE GLOBAL LIGHT THEME */
+/* Force global light theme everywhere */
 :root {
   color-scheme: light !important;
 }
 
-/* Global background + text */
-html, body, #root {
+/* Global light background + text colors + base font */
+html,
+body,
+#root {
   background-color: #e5e7eb !important;
   color: #111827 !important;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   margin: 0;
   padding: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* Remove Vite defaults */
+/* Make sizing predictable */
 * {
   box-sizing: border-box;
 }
 
-/* Reset buttons for our custom inline styles */
+/* Reset button defaults, we fully style them in App.jsx */
 button {
   all: unset;
   cursor: pointer;
