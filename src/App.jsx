@@ -47,8 +47,7 @@ function App() {
   }, []);
 
   // ---------------------------------------------------
-  // STEP 8: Load shared ratings from Supabase on startup
-  //         (overrides localStorage if data exists)
+  // Load shared ratings from Supabase on startup
   // ---------------------------------------------------
   useEffect(() => {
     const loadSharedRatings = async () => {
@@ -99,46 +98,52 @@ function App() {
   const selectedCall = calls.find((c) => c.call_id === selectedCallId);
 
   // ---------------------------------------------------
-  // STEP 7: Update rating locally + send to Supabase
+  // Update rating locally + send to Supabase
+  // (stars AND comment both saved)
   // ---------------------------------------------------
-  const handleRatingChange = async (callId, idx, field, value) => {
-    // 1) Compute new stars/comment based on existing state
-    const prevForCall = ratings[callId] || {};
-    const prevForUtterance = prevForCall[idx] || { stars: 0, comment: "" };
+  const handleRatingChange = (callId, idx, field, value) => {
+    setRatings((prev) => {
+      const prevForCall = prev[callId] || {};
+      const prevForUtterance = prevForCall[idx] || {
+        stars: 0,
+        comment: "",
+      };
 
-    const newStars =
-      field === "stars" ? value : prevForUtterance.stars || 0;
-    const newComment =
-      field === "comment" ? value : prevForUtterance.comment || "";
+      const updatedUtterance = {
+        ...prevForUtterance,
+        [field]: value,
+      };
 
-    // 2) Update local React state (and thus localStorage)
-    setRatings((prev) => ({
-      ...prev,
-      [callId]: {
-        ...(prev[callId] || {}),
-        [idx]: {
-          stars: newStars,
-          comment: newComment,
+      const updatedRatings = {
+        ...prev,
+        [callId]: {
+          ...prevForCall,
+          [idx]: updatedUtterance,
         },
-      },
-    }));
+      };
 
-    // 3) Upsert into Supabase (shared backend)
-    try {
-      const { error } = await supabase.from("call_ratings").upsert({
-        call_id: callId,
-        turn_index: idx,
-        stars: newStars,
-        comment: newComment,
-        user_id: USER_ID,
-      });
+      // Fire-and-forget Supabase upsert using the latest values
+      const { stars, comment } = updatedUtterance;
+      supabase
+        .from("call_ratings")
+        .upsert({
+          call_id: callId,
+          turn_index: idx,
+          stars: stars || 0,
+          comment: comment || "",
+          user_id: USER_ID,
+        })
+        .then(({ error }) => {
+          if (error) {
+            console.error("Supabase save error:", error);
+          }
+        })
+        .catch((e) => {
+          console.error("Unexpected Supabase save error:", e);
+        });
 
-      if (error) {
-        console.error("Supabase save error:", error);
-      }
-    } catch (e) {
-      console.error("Unexpected Supabase save error:", e);
-    }
+      return updatedRatings;
+    });
   };
 
   const scrollToUtterance = (callId, idx) => {
@@ -235,7 +240,7 @@ function App() {
         >
           Calls
         </div>
-        {calls.map((call) => (
+        {calls.map((call, index) => (
           <button
             key={call.call_id}
             onClick={() => setSelectedCallId(call.call_id)}
@@ -253,6 +258,17 @@ function App() {
           >
             <div
               style={{
+                fontSize: 12,
+                fontWeight: 600,
+                marginBottom: 2,
+                color: "#6b7280",
+              }}
+            >
+              {/* Serial number for each task */}
+              Task {index + 1}
+            </div>
+            <div
+              style={{
                 fontSize: 13,
                 fontWeight:
                   call.call_id === selectedCallId ? 700 : 500,
@@ -262,7 +278,7 @@ function App() {
                 color: "#111827",
               }}
             >
-              Task: {call.call_id}
+              {call.call_id}
             </div>
             <div style={{ fontSize: 12, color: "#6b7280" }}>
               {call.dialogue?.length ?? 0} turns
