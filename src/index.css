@@ -1,4 +1,16 @@
 :root {
+  color-scheme: light !important;
+}
+
+html, body, #root {
+  background: #e5e7eb !important;
+  color: #111827 !important;
+}
+
+* {
+  color-scheme: light !important;
+}
+:root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
