@@ -73,7 +73,10 @@ function App() {
       try {
         const { data, error } = await supabase
           .from("call_ratings")
-          .select("*");
+          .select("*")
+          .eq("user_id", USER_ID); // only this user's rows
+
+        console.log("Loaded ratings from Supabase:", { data, error });
 
         if (error) {
           console.error("Error loading ratings from Supabase:", error);
@@ -175,13 +178,23 @@ function App() {
 
     // 2) Upsert into Supabase
     try {
-      const { error } = await supabase.from("call_ratings").upsert({
-        call_id: callId,
-        turn_index: idx,
-        stars: newStars,
-        comment: finalComment,
-        user_id: USER_ID,
-      });
+      const { data, error } = await supabase
+        .from("call_ratings")
+        .upsert(
+          {
+            call_id: callId,
+            turn_index: idx,
+            stars: newStars,
+            comment: finalComment,
+            user_id: USER_ID,
+          },
+          {
+            onConflict: "call_id,turn_index,user_id",
+            ignoreDuplicates: false,
+          }
+        );
+
+      console.log("Upsert rating result:", { data, error });
 
       if (error) {
         console.error("Supabase save error:", error);
@@ -293,7 +306,7 @@ function App() {
         <div
           style={{
             padding: 12,
-            borderBottom: "1px solid #e5e7eb",
+            borderBottom: "1px solid "#e5e7eb",
             fontWeight: 700,
             fontSize: 15,
             backgroundColor: "#ffffff",
@@ -315,7 +328,7 @@ function App() {
             <div
               key={call.call_id}
               style={{
-                borderBottom: "1px solid #e5e7eb",
+                borderBottom: "1px solid "#e5e7eb",
                 background: rowBg,
                 padding: 8,
                 display: "flex",
