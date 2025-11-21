@@ -24,6 +24,20 @@ const METRICS = [
   },
 ];
 
+const METRIC_KEYS = METRICS.map((m) => m.key);
+
+// rating status helper for progress + list
+const getRatingStatus = (rating) => {
+  if (!rating) return "not_started";
+  const hasAnyMetric = METRIC_KEYS.some((k) => (rating[k] || 0) > 0);
+  const hasIdeal = (rating.idealResponse || "").trim().length > 0;
+  if (!hasAnyMetric && !hasIdeal) return "not_started";
+
+  const allMetricsFilled = METRIC_KEYS.every((k) => (rating[k] || 0) > 0);
+  if (allMetricsFilled && hasIdeal) return "complete";
+  return "partial";
+};
+
 function App() {
   const [calls, setCalls] = useState([]);
   const [selectedCallId, setSelectedCallId] = useState(null);
@@ -204,6 +218,36 @@ function App() {
   }, [isResizingSidebar]);
 
   const selectedCall = calls.find((c) => c.call_id === selectedCallId);
+
+  // ---------------------------------------------------
+  // Derived: assistant turns + progress for selected call
+  // ---------------------------------------------------
+  let assistantTurnsForSelected = [];
+  let totalAssistantTurns = 0;
+  let fullyRatedCount = 0;
+  let partiallyRatedCount = 0;
+
+  if (selectedCall) {
+    const callRatings = ratings[selectedCall.call_id] || {};
+    assistantTurnsForSelected = selectedCall.dialogue
+      .map((utt, idx) => ({
+        ...utt,
+        idx,
+        rating: callRatings[idx],
+      }))
+      .filter((u) => u.author === "Assistant");
+
+    totalAssistantTurns = assistantTurnsForSelected.length;
+
+    assistantTurnsForSelected.forEach((t) => {
+      const status = getRatingStatus(t.rating);
+      if (status === "complete") fullyRatedCount += 1;
+      else if (status === "partial") partiallyRatedCount += 1;
+    });
+  }
+
+  const progressPercent =
+    totalAssistantTurns > 0 ? Math.round((fullyRatedCount / totalAssistantTurns) * 100) : 0;
 
   // ---------------------------------------------------
   // Update rating locally + send to Supabase
@@ -439,7 +483,7 @@ function App() {
                   style={{
                     fontSize: 13,
                     fontWeight: isSelected ? 700 : 500,
-                    whiteSpace: "normal", // show full call_id (wrap instead of ellipsis)
+                    whiteSpace: "normal", // wrap to show full id
                     color: "#111827",
                   }}
                 >
@@ -488,7 +532,7 @@ function App() {
           flex: 1,
           minWidth: 800,
           display: "grid",
-          gridTemplateColumns: "2fr 1fr",
+          gridTemplateColumns: "2fr 1.1fr",
           backgroundColor: "#e5e7eb",
           overflowX: "auto",
           overflowY: "hidden",
@@ -548,7 +592,7 @@ function App() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {utt.author} {isAssistant ? `(click to rate)` : ""}
+                    {utt.author} {isAssistant ? "(click to rate)" : ""}
                   </div>
                   <div
                     style={{
@@ -568,7 +612,7 @@ function App() {
           )}
         </section>
 
-        {/* Right – info + downloads */}
+        {/* Right – call overview + quick navigation + exports */}
         <section
           style={{
             padding: 12,
@@ -577,6 +621,7 @@ function App() {
             backgroundColor: "#f3f4f6",
           }}
         >
+          {/* Header + downloads */}
           <div
             style={{
               display: "flex",
@@ -584,7 +629,6 @@ function App() {
               alignItems: "center",
               marginBottom: 10,
               gap: 8,
-              whiteSpace: "nowrap",
             }}
           >
             <div
@@ -594,7 +638,7 @@ function App() {
                 color: "#111827",
               }}
             >
-              Ratings & Export
+              Call overview
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               <button
@@ -611,7 +655,7 @@ function App() {
                   whiteSpace: "nowrap",
                 }}
               >
-                Download this call
+                Download call
               </button>
               <button
                 onClick={handleExportAnnotatedTranscriptsAll}
@@ -627,37 +671,21 @@ function App() {
                   whiteSpace: "nowrap",
                 }}
               >
-                Download all calls
+                Download all
               </button>
             </div>
           </div>
 
-          <div
-            style={{
-              fontSize: 13,
-              color: "#4b5563",
-              marginBottom: 12,
-            }}
-          >
-            Click any <strong>Assistant</strong> turn in the transcript to open the rating dialog
-            and label it on:
-            <ul style={{ paddingLeft: 18, marginTop: 4 }}>
-              <li>Code-Switch</li>
-              <li>Colloquialness</li>
-              <li>Emotional Intelligence</li>
-              <li>SOP Adherence</li>
-            </ul>
-          </div>
-
-          {activeTurnIndex != null && (
+          {/* Progress block */}
+          {selectedCall ? (
             <div
               style={{
-                marginTop: 8,
-                padding: 10,
                 borderRadius: 10,
                 border: "1px solid #e5e7eb",
                 backgroundColor: "#ffffff",
-                boxShadow: "0 1px 2px rgba(15, 23, 42, 0.03)",
+                padding: 10,
+                marginBottom: 12,
+                boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
               }}
             >
               <div
@@ -667,66 +695,198 @@ function App() {
                   marginBottom: 4,
                 }}
               >
-                Currently selected: Assistant @ turn {activeTurnIndex}
+                Call ID
               </div>
               <div
                 style={{
                   fontSize: 13,
-                  color: "#111827",
-                  maxHeight: 80,
-                  overflow: "hidden",
+                  fontWeight: 500,
                   marginBottom: 8,
+                  wordBreak: "break-all",
+                  color: "#111827",
                 }}
               >
-                {activeUtteranceText}
+                {selectedCall.call_id}
               </div>
-              {METRICS.map((m) => (
-                <div
-                  key={m.key}
-                  style={{
-                    fontSize: 12,
-                    color: "#4b5563",
-                    marginBottom: 4,
-                  }}
-                >
-                  {m.label}:{" "}
-                  <strong>
-                    {activeRating[m.key] ? `${activeRating[m.key]} / 5` : "not rated"}
-                  </strong>
-                </div>
-              ))}
+
               <div
                 style={{
                   fontSize: 12,
                   color: "#4b5563",
-                  marginTop: 6,
+                  marginBottom: 6,
                 }}
               >
-                Ideal response:{" "}
-                {activeRating.idealResponse ? (
-                  <span>"{activeRating.idealResponse}"</span>
-                ) : (
-                  <em>not provided</em>
-                )}
+                Assistant turns fully rated:{" "}
+                <strong>
+                  {fullyRatedCount}/{totalAssistantTurns}
+                </strong>{" "}
+                {totalAssistantTurns > 0 && `(${progressPercent}%)`}
               </div>
-              <button
+
+              <div
                 style={{
-                  marginTop: 10,
-                  padding: "4px 8px",
-                  fontSize: 12,
+                  width: "100%",
+                  height: 8,
                   borderRadius: 999,
-                  border: "1px solid #6366f1",
-                  backgroundColor: "#6366f1",
-                  color: "#ffffff",
-                  cursor: "pointer",
+                  backgroundColor: "#e5e7eb",
+                  overflow: "hidden",
+                  marginBottom: 6,
                 }}
-                onClick={() =>
-                  activeRatingTarget &&
-                  openRatingModal(activeRatingTarget.callId, activeRatingTarget.idx)
-                }
               >
-                Edit ratings
-              </button>
+                <div
+                  style={{
+                    width: `${progressPercent}%`,
+                    height: "100%",
+                    borderRadius: 999,
+                    background:
+                      progressPercent === 100 ? "#10b981" : "#6366f1",
+                    transition: "width 0.2s ease-out",
+                  }}
+                />
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  fontSize: 11,
+                  color: "#6b7280",
+                }}
+              >
+                <span>Partial: {partiallyRatedCount}</span>
+                <span>
+                  Not started:{" "}
+                  {Math.max(
+                    totalAssistantTurns - fullyRatedCount - partiallyRatedCount,
+                    0
+                  )}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: "#6b7280" }}>
+              Select a call on the left to see its overview here.
+            </div>
+          )}
+
+          {/* Assistant turns list with status */}
+          {selectedCall && (
+            <div
+              style={{
+                marginTop: 4,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  marginBottom: 6,
+                  color: "#111827",
+                }}
+              >
+                Assistant turns in this call
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "#6b7280",
+                  marginBottom: 6,
+                }}
+              >
+                Click any row to jump to that turn and open the rating dialog.
+              </div>
+
+              {assistantTurnsForSelected.map((t) => {
+                const status = getRatingStatus(t.rating);
+                const isActive =
+                  activeRatingTarget &&
+                  activeRatingTarget.callId === selectedCall.call_id &&
+                  activeRatingTarget.idx === t.idx;
+
+                const statusColor =
+                  status === "complete"
+                    ? "#22c55e"
+                    : status === "partial"
+                    ? "#f97316"
+                    : "#d1d5db";
+
+                const statusLabel =
+                  status === "complete"
+                    ? "Complete"
+                    : status === "partial"
+                    ? "Partial"
+                    : "Not started";
+
+                return (
+                  <button
+                    key={t.idx}
+                    onClick={() => openRatingModal(selectedCall.call_id, t.idx)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      borderRadius: 10,
+                      border: isActive
+                        ? "1px solid #6366f1"
+                        : "1px solid #e5e7eb",
+                      backgroundColor: "#ffffff",
+                      padding: 8,
+                      marginBottom: 6,
+                      cursor: "pointer",
+                      boxShadow: isActive
+                        ? "0 0 0 1px rgba(99,102,241,0.2)"
+                        : "0 1px 2px rgba(15, 23, 42, 0.03)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: 4,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "#6b7280",
+                        }}
+                      >
+                        Turn {t.idx}
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          fontSize: 11,
+                          color: "#4b5563",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            backgroundColor: statusColor,
+                          }}
+                        />
+                        <span>{statusLabel}</span>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "#111827",
+                        maxHeight: 40,
+                        overflow: "hidden",
+                      }}
+                    >
+                      {t.text}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </section>
@@ -797,7 +957,7 @@ function App() {
                 color: "#6b7280",
               }}
             >
-              Click stars for each metric and optionally write the ideal response for this turn.
+              Rate this turn on each metric and optionally write the ideal response.
             </div>
 
             <div
