@@ -269,6 +269,9 @@ function App() {
       style={{
         display: "flex",
         height: "100vh",
+        width: "100vw",
+        overflowX: "auto", // horizontal scroll for whole app
+        overflowY: "hidden",
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
         fontSize: 15,
         backgroundColor: "#e5e7eb",
@@ -279,9 +282,11 @@ function App() {
       <aside
         style={{
           width: 260,
+          minWidth: 260,
           borderRight: "1px solid #d1d5db",
           overflowY: "auto",
-          overflowX: "auto",
+          overflowX: "auto", // horizontal scroll
+          whiteSpace: "nowrap",
           backgroundColor: "#f9fafb",
         }}
       >
@@ -292,6 +297,7 @@ function App() {
             fontWeight: 700,
             fontSize: 15,
             backgroundColor: "#ffffff",
+            whiteSpace: "nowrap",
           }}
         >
           Calls
@@ -357,6 +363,7 @@ function App() {
                   background: isCompleted ? "#10b981" : "#ffffff",
                   color: isCompleted ? "#ffffff" : "#10b981",
                   fontWeight: 600,
+                  whiteSpace: "nowrap",
                 }}
               >
                 {isCompleted ? "Completed ✓" : "Mark done"}
@@ -370,11 +377,12 @@ function App() {
       <main
         style={{
           flex: 1,
+          minWidth: 900, // forces horizontal scroll when viewport is narrow
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
           backgroundColor: "#e5e7eb",
-          overflowX: "auto", // sideways scroll if viewport is narrow
-          minWidth: 900, // ensure content can scroll horizontally
+          overflowX: "auto", // horizontal scroll for the two-panel area
+          overflowY: "hidden",
         }}
       >
         {/* Left – transcript */}
@@ -383,7 +391,7 @@ function App() {
             borderRight: "1px solid #d1d5db",
             padding: 12,
             overflowY: "auto",
-            overflowX: "auto",
+            overflowX: "auto", // horizontal scroll inside transcript panel
             backgroundColor: "#f3f4f6",
           }}
         >
@@ -393,6 +401,7 @@ function App() {
               fontWeight: 700,
               fontSize: 16,
               color: "#111827",
+              whiteSpace: "nowrap",
             }}
           >
             Transcript
@@ -412,6 +421,7 @@ function App() {
                     backgroundColor: isAssistant ? "#eff6ff" : "#ffffff",
                     border: "1px solid #e5e7eb",
                     boxShadow: "0 1px 2px rgba(15, 23, 42, 0.03)",
+                    overflowX: "auto",
                   }}
                 >
                   <div
@@ -422,6 +432,7 @@ function App() {
                       color: isAssistant ? "#1d4ed8" : "#4b5563",
                       textTransform: "uppercase",
                       letterSpacing: 0.4,
+                      whiteSpace: "nowrap",
                     }}
                   >
                     {utt.author}
@@ -431,6 +442,7 @@ function App() {
                       fontSize: 16,
                       color: "#111827",
                       lineHeight: 1.45,
+                      whiteSpace: "pre-wrap",
                     }}
                   >
                     {utt.text}
@@ -448,7 +460,7 @@ function App() {
           style={{
             padding: 12,
             overflowY: "auto",
-            overflowX: "auto",
+            overflowX: "auto", // horizontal scroll inside ratings panel
             backgroundColor: "#f3f4f6",
           }}
         >
@@ -459,6 +471,7 @@ function App() {
               alignItems: "center",
               marginBottom: 10,
               gap: 8,
+              whiteSpace: "nowrap",
             }}
           >
             <div
@@ -482,6 +495,7 @@ function App() {
                   background: "#6366f1",
                   color: "#ffffff",
                   fontWeight: 500,
+                  whiteSpace: "nowrap",
                 }}
               >
                 Download this call
@@ -497,6 +511,7 @@ function App() {
                   background: "#10b981",
                   color: "#ffffff",
                   fontWeight: 500,
+                  whiteSpace: "nowrap",
                 }}
               >
                 Download all calls
@@ -524,6 +539,7 @@ function App() {
                       marginBottom: 12,
                       backgroundColor: "#ffffff",
                       boxShadow: "0 1px 3px rgba(15, 23, 42, 0.05)",
+                      overflowX: "auto",
                     }}
                     onMouseEnter={() =>
                       scrollToUtterance(selectedCall.call_id, u.idx)
@@ -534,6 +550,7 @@ function App() {
                         fontSize: 12,
                         color: "#6b7280",
                         marginBottom: 4,
+                        whiteSpace: "nowrap",
                       }}
                     >
                       Assistant @ turn {u.idx}
